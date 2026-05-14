@@ -77,10 +77,11 @@ if not st.session_state.authenticated:
 
         spoken_text = speech_to_text(audio["bytes"])
 
-        st.write(f"Escuché: {spoken_text}")
+        # Mostrar lo que escuchó
+        st.write(f"Texto detectado: '{spoken_text}'")
 
         # PASSWORD CORRECTA
-        if spoken_text == PASSWORD:
+        if PASSWORD in spoken_text:
 
             st.success("✅ Acceso concedido")
 
@@ -119,8 +120,6 @@ else:
     st.title("🛡️ Página Secreta")
 
     st.success("Bienvenido")
-
-    st.write("Contenido oculto aquí.")
 
     st.write("🔥 Funcionó el reconocimiento de voz.")
 
