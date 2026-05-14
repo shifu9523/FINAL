@@ -1,14 +1,18 @@
 import streamlit as st
 from streamlit_mic_recorder import mic_recorder
 import speech_recognition as sr
-import tempfile
+import os
+
+# -------------------------
+# CONFIG
+# -------------------------
 
 PASSWORD = "hola"
 MAX_ATTEMPTS = 3
 
-# ------------------------
+# -------------------------
 # SESSION STATE
-# ------------------------
+# -------------------------
 
 if "authenticated" not in st.session_state:
     st.session_state.authenticated = False
@@ -16,31 +20,46 @@ if "authenticated" not in st.session_state:
 if "attempts" not in st.session_state:
     st.session_state.attempts = 0
 
-# ------------------------
+# -------------------------
 # VOICE TO TEXT
-# ------------------------
+# -------------------------
 
 def speech_to_text(audio_bytes):
 
     recognizer = sr.Recognizer()
 
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
-        tmp.write(audio_bytes)
-        filename = tmp.name
+    temp_webm = "temp_audio.webm"
+    temp_wav = "temp_audio.wav"
 
-    with sr.AudioFile(filename) as source:
-        audio = recognizer.record(source)
+    # Guardar audio del navegador
+    with open(temp_webm, "wb") as f:
+        f.write(audio_bytes)
+
+    # Convertir WEBM -> WAV
+    os.system(
+        f"ffmpeg -i {temp_webm} {temp_wav} -y > /dev/null 2>&1"
+    )
 
     try:
-        text = recognizer.recognize_google(audio, language="es-ES")
+
+        # Leer WAV
+        with sr.AudioFile(temp_wav) as source:
+            audio = recognizer.record(source)
+
+        # Reconocimiento de voz
+        text = recognizer.recognize_google(
+            audio,
+            language="es-ES"
+        )
+
         return text.lower()
 
     except:
         return ""
 
-# ------------------------
-# LOGIN
-# ------------------------
+# -------------------------
+# LOGIN PAGE
+# -------------------------
 
 if not st.session_state.authenticated:
 
@@ -60,6 +79,7 @@ if not st.session_state.authenticated:
 
         st.write(f"Escuché: {spoken_text}")
 
+        # PASSWORD CORRECTA
         if spoken_text == PASSWORD:
 
             st.success("✅ Acceso concedido")
@@ -68,6 +88,7 @@ if not st.session_state.authenticated:
 
             st.rerun()
 
+        # PASSWORD INCORRECTA
         else:
 
             st.session_state.attempts += 1
@@ -77,17 +98,21 @@ if not st.session_state.authenticated:
             st.error("❌ Contraseña incorrecta")
 
             if remaining > 0:
-                st.warning(f"Intentos restantes: {remaining}")
 
+                st.warning(
+                    f"Intentos restantes: {remaining}"
+                )
+
+            # ALARMA
             if st.session_state.attempts >= MAX_ATTEMPTS:
 
                 st.error("🚨 ALARMA ACTIVADA")
 
                 st.audio("alarm.mp3")
 
-# ------------------------
+# -------------------------
 # SECRET PAGE
-# ------------------------
+# -------------------------
 
 else:
 
@@ -96,6 +121,8 @@ else:
     st.success("Bienvenido")
 
     st.write("Contenido oculto aquí.")
+
+    st.write("🔥 Funcionó el reconocimiento de voz.")
 
     if st.button("Cerrar sesión"):
 
