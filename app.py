@@ -151,9 +151,6 @@ if not st.session_state.authenticated:
 
                 st.warning("📡 Enviando alerta de seguridad...")
 
-                st.warning("📷 Activando cámaras...")
-
-                st.warning("🚔 Contactando autoridades...")
 
                 # -------------------------
                 # SONIDO AUTOMÁTICO
