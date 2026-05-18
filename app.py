@@ -2,6 +2,11 @@ import streamlit as st
 from st_audiorec import st_audiorec
 import speech_recognition as sr
 import tempfile
+import base64
+
+# -------------------------
+# CONFIG
+# -------------------------
 
 PASSWORD = "hola"
 MAX_ATTEMPTS = 3
@@ -49,11 +54,9 @@ def speech_to_text(audio_bytes):
 
 if not st.session_state.authenticated:
 
-    st.title("🔐 Acceso por Voz")
+    st.title("🔐 SISTEMA DE ACCESO")
 
-    st.write("1. Presiona grabar")
-    st.write("2. Di la contraseña")
-    st.write("3. Detén la grabación")
+    st.write("🎙️ Di la contraseña correcta para entrar.")
 
     audio_data = st_audiorec()
 
@@ -61,38 +64,118 @@ if not st.session_state.authenticated:
 
         spoken_text = speech_to_text(audio_data)
 
-        st.write(f"Texto detectado: {spoken_text}")
+        st.write(f"🗣️ Texto detectado: {spoken_text}")
 
+        # -------------------------
         # PASSWORD CORRECTA
+        # -------------------------
+
         if PASSWORD in spoken_text:
 
-            st.success("✅ Acceso concedido")
+            st.success("✅ ACCESO CONCEDIDO")
 
             st.session_state.authenticated = True
 
             st.rerun()
 
+        # -------------------------
         # PASSWORD INCORRECTA
+        # -------------------------
+
         else:
 
             st.session_state.attempts += 1
 
             remaining = MAX_ATTEMPTS - st.session_state.attempts
 
-            st.error("❌ Contraseña incorrecta")
+            st.error("❌ CONTRASEÑA INCORRECTA")
 
             if remaining > 0:
 
                 st.warning(
-                    f"Intentos restantes: {remaining}"
+                    f"⚠️ Intentos restantes: {remaining}"
                 )
 
-            # ALARMA
+            # -------------------------
+            # ALARMA EXTREMA
+            # -------------------------
+
             if st.session_state.attempts >= MAX_ATTEMPTS:
 
-                st.error("🚨 ALARMA ACTIVADA")
+                # PANTALLA ROJA + FLASH
+                st.markdown(
+                    """
+                    <style>
 
-                st.audio("alarm.mp3")
+                    .stApp {
+                        background-color: #2b0000;
+                        animation: flash 0.3s infinite;
+                    }
+
+                    @keyframes flash {
+                        0% {background-color:#2b0000;}
+                        50% {background-color:#ff0000;}
+                        100% {background-color:#2b0000;}
+                    }
+
+                    .big-alert {
+                        font-size: 70px;
+                        color: white;
+                        text-align: center;
+                        font-weight: bold;
+                        animation: blink 0.5s infinite;
+                    }
+
+                    @keyframes blink {
+                        0% {opacity: 1;}
+                        50% {opacity: 0;}
+                        100% {opacity: 1;}
+                    }
+
+                    </style>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+                # TEXTO GIGANTE
+                st.markdown(
+                    """
+                    <div class="big-alert">
+                    🚨 ACCESS DENIED 🚨
+                    </div>
+                    """,
+                    unsafe_allow_html=True
+                )
+
+                st.error("🚨 INTRUSO DETECTADO 🚨")
+
+                st.warning("📡 Enviando alerta de seguridad...")
+
+                st.warning("📷 Activando cámaras...")
+
+                st.warning("🚔 Contactando autoridades...")
+
+                # -------------------------
+                # SONIDO AUTOMÁTICO
+                # -------------------------
+
+                with open("alarm.mp3", "rb") as f:
+                    audio_bytes = f.read()
+
+                audio_base64 = base64.b64encode(
+                    audio_bytes
+                ).decode()
+
+                audio_html = f"""
+                <audio autoplay>
+                    <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
+                </audio>
+                """
+
+                st.markdown(
+                    audio_html,
+                    unsafe_allow_html=True
+                )
 
 # -------------------------
 # SECRET PAGE
@@ -100,11 +183,13 @@ if not st.session_state.authenticated:
 
 else:
 
-    st.title("🛡️ Página Secreta")
+    st.title("🛡️ ZONA RESTRINGIDA")
 
-    st.success("Bienvenido")
+    st.success("✅ IDENTIDAD VERIFICADA")
 
-    st.write("🔥 Reconocimiento de voz funcionando.")
+    st.write("🔥 Bienvenido al sistema secreto.")
+
+    st.balloons()
 
     if st.button("Cerrar sesión"):
 
