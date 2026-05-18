@@ -1,7 +1,5 @@
 import streamlit as st
-from streamlit_mic_recorder import mic_recorder
-import speech_recognition as sr
-import os
+from streamlit_js_eval import streamlit_js_eval
 
 # -------------------------
 # CONFIG
@@ -20,42 +18,33 @@ if "authenticated" not in st.session_state:
 if "attempts" not in st.session_state:
     st.session_state.attempts = 0
 
+if "spoken_text" not in st.session_state:
+    st.session_state.spoken_text = ""
+
 # -------------------------
-# VOICE TO TEXT
+# JAVASCRIPT SPEECH RECOGNITION
 # -------------------------
 
-def speech_to_text(audio_bytes):
+speech_js = """
+var recognition = new webkitSpeechRecognition();
+recognition.lang = 'es-ES';
+recognition.start();
 
-    recognizer = sr.Recognizer()
+recognition.onresult = function(event) {
+    var text = event.results[0][0].transcript;
+    window.parent.postMessage({
+        type: 'streamlit:setComponentValue',
+        value: text
+    }, '*');
+};
 
-    temp_webm = "temp_audio.webm"
-    temp_wav = "temp_audio.wav"
-
-    # Guardar audio del navegador
-    with open(temp_webm, "wb") as f:
-        f.write(audio_bytes)
-
-    # Convertir WEBM -> WAV
-    os.system(
-        f"ffmpeg -i {temp_webm} {temp_wav} -y > /dev/null 2>&1"
-    )
-
-    try:
-
-        # Leer WAV
-        with sr.AudioFile(temp_wav) as source:
-            audio = recognizer.record(source)
-
-        # Reconocimiento de voz
-        text = recognizer.recognize_google(
-            audio,
-            language="es-ES"
-        )
-
-        return text.lower()
-
-    except:
-        return ""
+recognition.onerror = function(event) {
+    window.parent.postMessage({
+        type: 'streamlit:setComponentValue',
+        value: 'ERROR'
+    }, '*');
+};
+"""
 
 # -------------------------
 # LOGIN PAGE
@@ -65,51 +54,50 @@ if not st.session_state.authenticated:
 
     st.title("🔐 Acceso por Voz")
 
-    st.write("Presiona grabar y di la contraseña.")
+    st.write("Presiona el botón y di la contraseña.")
 
-    audio = mic_recorder(
-        start_prompt="🎙️ Grabar",
-        stop_prompt="⏹️ Detener",
-        key="recorder"
-    )
+    if st.button("🎙️ Hablar"):
 
-    if audio:
+        spoken_text = streamlit_js_eval(
+            js_expressions=speech_js,
+            key="speech"
+        )
 
-        spoken_text = speech_to_text(audio["bytes"])
+        if spoken_text:
 
-        # Mostrar lo que escuchó
-        st.write(f"Texto detectado: '{spoken_text}'")
+            spoken_text = spoken_text.lower()
 
-        # PASSWORD CORRECTA
-        if PASSWORD in spoken_text:
+            st.write(f"Texto detectado: {spoken_text}")
 
-            st.success("✅ Acceso concedido")
+            # PASSWORD CORRECTA
+            if PASSWORD in spoken_text:
 
-            st.session_state.authenticated = True
+                st.success("✅ Acceso concedido")
 
-            st.rerun()
+                st.session_state.authenticated = True
 
-        # PASSWORD INCORRECTA
-        else:
+                st.rerun()
 
-            st.session_state.attempts += 1
+            # PASSWORD INCORRECTA
+            else:
 
-            remaining = MAX_ATTEMPTS - st.session_state.attempts
+                st.session_state.attempts += 1
 
-            st.error("❌ Contraseña incorrecta")
+                remaining = MAX_ATTEMPTS - st.session_state.attempts
 
-            if remaining > 0:
+                st.error("❌ Contraseña incorrecta")
 
-                st.warning(
-                    f"Intentos restantes: {remaining}"
-                )
+                if remaining > 0:
+                    st.warning(
+                        f"Intentos restantes: {remaining}"
+                    )
 
-            # ALARMA
-            if st.session_state.attempts >= MAX_ATTEMPTS:
+                # ALARMA
+                if st.session_state.attempts >= MAX_ATTEMPTS:
 
-                st.error("🚨 ALARMA ACTIVADA")
+                    st.error("🚨 ALARMA ACTIVADA")
 
-                st.audio("alarm.mp3")
+                    st.audio("alarm.mp3")
 
 # -------------------------
 # SECRET PAGE
@@ -121,7 +109,7 @@ else:
 
     st.success("Bienvenido")
 
-    st.write("🔥 Funcionó el reconocimiento de voz.")
+    st.write("🔥 Reconocimiento de voz funcionando.")
 
     if st.button("Cerrar sesión"):
 
