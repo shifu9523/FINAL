@@ -327,7 +327,7 @@ else:
     # =========================
     # API KEY
     # =========================
-
+    st.text_input ("API KEY: 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")
     api_key = st.text_input(
         "🔑 Ingresa tu API Key de OpenAI",
         type="password"
