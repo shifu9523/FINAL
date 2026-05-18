@@ -1,5 +1,7 @@
 import streamlit as st
-import streamlit.components.v1 as components
+from st_audiorec import st_audiorec
+import speech_recognition as sr
+import tempfile
 
 PASSWORD = "hola"
 MAX_ATTEMPTS = 3
@@ -15,6 +17,33 @@ if "attempts" not in st.session_state:
     st.session_state.attempts = 0
 
 # -------------------------
+# AUDIO TO TEXT
+# -------------------------
+
+def speech_to_text(audio_bytes):
+
+    recognizer = sr.Recognizer()
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as tmp:
+        tmp.write(audio_bytes)
+        filename = tmp.name
+
+    try:
+
+        with sr.AudioFile(filename) as source:
+            audio = recognizer.record(source)
+
+        text = recognizer.recognize_google(
+            audio,
+            language="es-ES"
+        )
+
+        return text.lower()
+
+    except:
+        return ""
+
+# -------------------------
 # LOGIN PAGE
 # -------------------------
 
@@ -22,75 +51,48 @@ if not st.session_state.authenticated:
 
     st.title("🔐 Acceso por Voz")
 
-    st.write("Presiona el botón y di la contraseña.")
+    st.write("1. Presiona grabar")
+    st.write("2. Di la contraseña")
+    st.write("3. Detén la grabación")
 
-    html_code = f"""
-    <button onclick="startRecognition()"
-        style="
-        background:#ff4b4b;
-        color:white;
-        border:none;
-        padding:15px 30px;
-        border-radius:10px;
-        font-size:20px;
-        cursor:pointer;">
-        🎙️ Hablar
-    </button>
+    audio_data = st_audiorec()
 
-    <p id="result"></p>
+    if audio_data is not None:
 
-    <script>
-    function startRecognition() {{
+        spoken_text = speech_to_text(audio_data)
 
-        var recognition = new webkitSpeechRecognition();
+        st.write(f"Texto detectado: {spoken_text}")
 
-        recognition.lang = 'es-ES';
-        recognition.start();
+        # PASSWORD CORRECTA
+        if PASSWORD in spoken_text:
 
-        recognition.onresult = function(event) {{
+            st.success("✅ Acceso concedido")
 
-            var text = event.results[0][0].transcript.toLowerCase();
+            st.session_state.authenticated = True
 
-            document.getElementById("result").innerHTML =
-                "Texto detectado: " + text;
+            st.rerun()
 
-            if(text.includes("{PASSWORD}")) {{
+        # PASSWORD INCORRECTA
+        else:
 
-                window.parent.location.reload();
+            st.session_state.attempts += 1
 
-                localStorage.setItem("authenticated", "true");
+            remaining = MAX_ATTEMPTS - st.session_state.attempts
 
-            }} else {{
+            st.error("❌ Contraseña incorrecta")
 
-                alert("❌ Contraseña incorrecta");
+            if remaining > 0:
 
-            }}
-        }};
-    }}
-    </script>
-    """
+                st.warning(
+                    f"Intentos restantes: {remaining}"
+                )
 
-    components.html(html_code, height=300)
+            # ALARMA
+            if st.session_state.attempts >= MAX_ATTEMPTS:
 
-    # Detectar autenticación
-    auth_html = """
-    <script>
-    const auth = localStorage.getItem("authenticated");
-    if(auth === "true"){
-        window.parent.postMessage({
-            type: "streamlit:setComponentValue",
-            value: "authenticated"
-        }, "*");
-    }
-    </script>
-    """
+                st.error("🚨 ALARMA ACTIVADA")
 
-    result = components.html(auth_html, height=0)
-
-    # Fallback visual
-    if st.button("Simular acceso"):
-        st.session_state.authenticated = True
-        st.rerun()
+                st.audio("alarm.mp3")
 
 # -------------------------
 # SECRET PAGE
@@ -100,11 +102,13 @@ else:
 
     st.title("🛡️ Página Secreta")
 
-    st.success("✅ Acceso concedido")
+    st.success("Bienvenido")
 
-    st.write("🔥 Funcionó el reconocimiento de voz.")
+    st.write("🔥 Reconocimiento de voz funcionando.")
 
     if st.button("Cerrar sesión"):
 
         st.session_state.authenticated = False
+        st.session_state.attempts = 0
+
         st.rerun()
