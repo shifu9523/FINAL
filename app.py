@@ -141,7 +141,7 @@ if not st.session_state.authenticated:
                 st.markdown(
                     """
                     <div class="big-alert">
-                    🚨 ACCESO DENEGADO 🚨
+                    🚨 ACCESS DENIED 🚨
                     </div>
                     """,
                     unsafe_allow_html=True
