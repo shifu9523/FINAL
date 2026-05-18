@@ -180,7 +180,7 @@ if not st.session_state.authenticated:
 
 else:
 
-    # =========================
+ # =========================
     # LIBRERÍAS
     # =========================
 
@@ -328,10 +328,7 @@ else:
     # API KEY
     # =========================
 
-    api_key = st.text_input(
-        "🔑 Ingresa tu API Key de OpenAI",
-        type="password"
-    )
+    api_key = st.secrets["OPENAI_API_KEY"]
 
     # =========================
     # FRASES ALEATORIAS
@@ -376,13 +373,7 @@ else:
 
     if st.button("✨ Crear Fábula"):
 
-        if not api_key:
-
-            st.warning(
-                "⚠️ Por favor ingresa tu API Key."
-            )
-
-        elif canvas_result.image_data is None:
+        if canvas_result.image_data is None:
 
             st.warning(
                 "⚠️ Dibuja un personaje primero."
