@@ -1,9 +1,5 @@
 import streamlit as st
-from streamlit_js_eval import streamlit_js_eval
-
-# -------------------------
-# CONFIG
-# -------------------------
+import streamlit.components.v1 as components
 
 PASSWORD = "hola"
 MAX_ATTEMPTS = 3
@@ -18,34 +14,6 @@ if "authenticated" not in st.session_state:
 if "attempts" not in st.session_state:
     st.session_state.attempts = 0
 
-if "spoken_text" not in st.session_state:
-    st.session_state.spoken_text = ""
-
-# -------------------------
-# JAVASCRIPT SPEECH RECOGNITION
-# -------------------------
-
-speech_js = """
-var recognition = new webkitSpeechRecognition();
-recognition.lang = 'es-ES';
-recognition.start();
-
-recognition.onresult = function(event) {
-    var text = event.results[0][0].transcript;
-    window.parent.postMessage({
-        type: 'streamlit:setComponentValue',
-        value: text
-    }, '*');
-};
-
-recognition.onerror = function(event) {
-    window.parent.postMessage({
-        type: 'streamlit:setComponentValue',
-        value: 'ERROR'
-    }, '*');
-};
-"""
-
 # -------------------------
 # LOGIN PAGE
 # -------------------------
@@ -56,48 +24,73 @@ if not st.session_state.authenticated:
 
     st.write("Presiona el botón y di la contraseña.")
 
-    if st.button("🎙️ Hablar"):
+    html_code = f"""
+    <button onclick="startRecognition()"
+        style="
+        background:#ff4b4b;
+        color:white;
+        border:none;
+        padding:15px 30px;
+        border-radius:10px;
+        font-size:20px;
+        cursor:pointer;">
+        🎙️ Hablar
+    </button>
 
-        spoken_text = streamlit_js_eval(
-            js_expressions=speech_js,
-            key="speech"
-        )
+    <p id="result"></p>
 
-        if spoken_text:
+    <script>
+    function startRecognition() {{
 
-            spoken_text = spoken_text.lower()
+        var recognition = new webkitSpeechRecognition();
 
-            st.write(f"Texto detectado: {spoken_text}")
+        recognition.lang = 'es-ES';
+        recognition.start();
 
-            # PASSWORD CORRECTA
-            if PASSWORD in spoken_text:
+        recognition.onresult = function(event) {{
 
-                st.success("✅ Acceso concedido")
+            var text = event.results[0][0].transcript.toLowerCase();
 
-                st.session_state.authenticated = True
+            document.getElementById("result").innerHTML =
+                "Texto detectado: " + text;
 
-                st.rerun()
+            if(text.includes("{PASSWORD}")) {{
 
-            # PASSWORD INCORRECTA
-            else:
+                window.parent.location.reload();
 
-                st.session_state.attempts += 1
+                localStorage.setItem("authenticated", "true");
 
-                remaining = MAX_ATTEMPTS - st.session_state.attempts
+            }} else {{
 
-                st.error("❌ Contraseña incorrecta")
+                alert("❌ Contraseña incorrecta");
 
-                if remaining > 0:
-                    st.warning(
-                        f"Intentos restantes: {remaining}"
-                    )
+            }}
+        }};
+    }}
+    </script>
+    """
 
-                # ALARMA
-                if st.session_state.attempts >= MAX_ATTEMPTS:
+    components.html(html_code, height=300)
 
-                    st.error("🚨 ALARMA ACTIVADA")
+    # Detectar autenticación
+    auth_html = """
+    <script>
+    const auth = localStorage.getItem("authenticated");
+    if(auth === "true"){
+        window.parent.postMessage({
+            type: "streamlit:setComponentValue",
+            value: "authenticated"
+        }, "*");
+    }
+    </script>
+    """
 
-                    st.audio("alarm.mp3")
+    result = components.html(auth_html, height=0)
+
+    # Fallback visual
+    if st.button("Simular acceso"):
+        st.session_state.authenticated = True
+        st.rerun()
 
 # -------------------------
 # SECRET PAGE
@@ -107,13 +100,11 @@ else:
 
     st.title("🛡️ Página Secreta")
 
-    st.success("Bienvenido")
+    st.success("✅ Acceso concedido")
 
-    st.write("🔥 Reconocimiento de voz funcionando.")
+    st.write("🔥 Funcionó el reconocimiento de voz.")
 
     if st.button("Cerrar sesión"):
 
         st.session_state.authenticated = False
-        st.session_state.attempts = 0
-
         st.rerun()
