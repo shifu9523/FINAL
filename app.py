@@ -3,7 +3,7 @@ from st_audiorec import st_audiorec
 import speech_recognition as sr
 import tempfile
 import base64
-mport numpy as np
+import numpy as np
 from PIL import Image
 from openai import OpenAI
 from streamlit_drawable_canvas import st_canvas
