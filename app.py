@@ -327,7 +327,8 @@ else:
     # =========================
     # API KEY
     # =========================
-   
+
+    api_key = st.text_input(
         "🔑 Ingresa tu API Key de OpenAI",
         type="password"
     )
