@@ -3,3 +3,4 @@ openai
 pillow
 numpy
 streamlit-audiorec
+SpeechRecognition
