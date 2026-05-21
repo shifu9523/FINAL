@@ -245,6 +245,7 @@ else:
         box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
         margin-top: 20px;
         font-size: 18px;
+        color: #2d2d2d;
     }
 
     .tip-box {
