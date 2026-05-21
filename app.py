@@ -325,10 +325,18 @@ else:
         )
 
     # =========================
-    # API KEY
+    # API KEY DESDE LA PÁGINA
     # =========================
 
-    api_key = st.secrets["OPENAI_API_KEY"]
+    api_key = st.text_input(
+        "🔑 Ingresa tu API Key de OpenAI",
+        type="password",
+        placeholder="sk-..."
+    )
+
+    if not api_key:
+        st.warning("⚠️ Ingresa tu API Key para continuar.")
+        st.stop()
 
     # =========================
     # FRASES ALEATORIAS
