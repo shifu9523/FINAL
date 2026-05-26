@@ -563,8 +563,7 @@ client1.on_message = on_message
 
 st.title("INTERFACES MULTIMODALES")
 st.subheader("COMPARTIMIENTO SECRETO")
-image = Image.open('voice_ctrl.jpg')
-st.image(image, width=200)
+
 
 # 
 st.markdown("### Comandos disponibles:")
