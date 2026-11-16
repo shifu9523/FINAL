@@ -3,27 +3,55 @@ from st_audiorec import st_audiorec
 import speech_recognition as sr
 import tempfile
 import base64
+import io
+import os
+import re
+import random
+from xml.sax.saxutils import escape
 
-# -------------------------
-# CONFIG
-# -------------------------
+import numpy as np
+from PIL import Image
+from openai import OpenAI
+from streamlit_drawable_canvas import st_canvas
+
+# =========================
+# CONFIGURACIÓN (siempre primero)
+# =========================
+st.set_page_config(
+    page_title="Cuentos de Macondo ✨",
+    page_icon="📖",
+    layout="centered"
+)
 
 PASSWORD = "hola"
 MAX_ATTEMPTS = 3
 
-# -------------------------
+# =========================
 # SESSION STATE
-# -------------------------
+# =========================
+defaults = {
+    # Login
+    "authenticated": False,
+    "attempts": 0,
+    "last_audio": None,
+    "last_text": "",
+    # Cuentos
+    "historia": "",
+    "descripcion_personaje": "",
+    "historia_html": "",
+    "pdf_bytes": None,
+    "pdf_nombre": "cuento.pdf",
+    "pdf_error": "",
+}
 
-if "authenticated" not in st.session_state:
-    st.session_state.authenticated = False
+for key, value in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
 
-if "attempts" not in st.session_state:
-    st.session_state.attempts = 0
 
-# -------------------------
-# AUDIO TO TEXT
-# -------------------------
+# =====================================================================
+#                           PARTE 1: LOGIN POR VOZ
+# =====================================================================
 
 def speech_to_text(audio_bytes):
 
@@ -34,7 +62,6 @@ def speech_to_text(audio_bytes):
         filename = tmp.name
 
     try:
-
         with sr.AudioFile(filename) as source:
             audio = recognizer.record(source)
 
@@ -45,14 +72,87 @@ def speech_to_text(audio_bytes):
 
         return text.lower()
 
-    except:
+    except Exception:
         return ""
 
-# -------------------------
-# LOGIN PAGE
-# -------------------------
+    finally:
+        try:
+            os.remove(filename)
+        except OSError:
+            pass
 
-if not st.session_state.authenticated:
+
+def mostrar_alarma():
+
+    # PANTALLA ROJA + FLASH
+    st.markdown(
+        """
+        <style>
+
+        .stApp {
+            background-color: #2b0000;
+            animation: flash 0.3s infinite;
+        }
+
+        @keyframes flash {
+            0% {background-color:#2b0000;}
+            50% {background-color:#ff0000;}
+            100% {background-color:#2b0000;}
+        }
+
+        .big-alert {
+            font-size: 70px;
+            color: white;
+            text-align: center;
+            font-weight: bold;
+            animation: blink 0.5s infinite;
+        }
+
+        @keyframes blink {
+            0% {opacity: 1;}
+            50% {opacity: 0;}
+            100% {opacity: 1;}
+        }
+
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+
+    # TEXTO GIGANTE
+    st.markdown(
+        """
+        <div class="big-alert">
+        🚨 ACCESO DENEGADO 🚨
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
+
+    st.error("🚨 INTRUSO DETECTADO 🚨")
+    st.warning("📡 Enviando alerta de seguridad...")
+
+    # SONIDO AUTOMÁTICO
+    if os.path.exists("alarm.mp3"):
+
+        with open("alarm.mp3", "rb") as f:
+            audio_bytes = f.read()
+
+        audio_base64 = base64.b64encode(audio_bytes).decode()
+
+        audio_html = f"""
+        <audio autoplay>
+            <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
+        </audio>
+        """
+
+        st.markdown(audio_html, unsafe_allow_html=True)
+
+    else:
+        st.info("🔇 (Falta el archivo alarm.mp3 junto a app.py)")
+
+
+def pantalla_login():
 
     st.title("🔐 SISTEMA DE ACCESO")
 
@@ -62,484 +162,735 @@ if not st.session_state.authenticated:
 
     if audio_data is not None:
 
-        spoken_text = speech_to_text(audio_data)
+        audio_id = hash(audio_data)
 
-        st.write(f"🗣️ Texto detectado: {spoken_text}")
+        # Solo procesar cada grabación UNA vez
+        # (si no, cada rerun contaría como un intento nuevo)
+        if audio_id != st.session_state.last_audio:
 
-        # -------------------------
-        # PASSWORD CORRECTA
-        # -------------------------
+            st.session_state.last_audio = audio_id
 
-        if PASSWORD in spoken_text:
+            spoken_text = speech_to_text(audio_data)
+            st.session_state.last_text = spoken_text
 
-            st.success("✅ ACCESO CONCEDIDO")
+            if PASSWORD in spoken_text:
+                st.session_state.authenticated = True
+                st.rerun()
+            else:
+                st.session_state.attempts += 1
 
-            st.session_state.authenticated = True
+    # Mostrar resultado del último intento
+    if st.session_state.attempts > 0:
 
-            st.rerun()
+        st.write(f"🗣️ Texto detectado: {st.session_state.last_text}")
 
-        # -------------------------
-        # PASSWORD INCORRECTA
-        # -------------------------
+        st.error("❌ CONTRASEÑA INCORRECTA")
 
-        else:
+        remaining = MAX_ATTEMPTS - st.session_state.attempts
 
-            st.session_state.attempts += 1
+        if remaining > 0:
+            st.warning(f"⚠️ Intentos restantes: {remaining}")
 
-            remaining = MAX_ATTEMPTS - st.session_state.attempts
-
-            st.error("❌ CONTRASEÑA INCORRECTA")
-
-            if remaining > 0:
-
-                st.warning(
-                    f"⚠️ Intentos restantes: {remaining}"
-                )
-
-            # -------------------------
-            # ALARMA EXTREMA
-            # -------------------------
-
-            if st.session_state.attempts >= MAX_ATTEMPTS:
-
-                # PANTALLA ROJA + FLASH
-                st.markdown(
-                    """
-                    <style>
-
-                    .stApp {
-                        background-color: #2b0000;
-                        animation: flash 0.3s infinite;
-                    }
-
-                    @keyframes flash {
-                        0% {background-color:#2b0000;}
-                        50% {background-color:#ff0000;}
-                        100% {background-color:#2b0000;}
-                    }
-
-                    .big-alert {
-                        font-size: 70px;
-                        color: white;
-                        text-align: center;
-                        font-weight: bold;
-                        animation: blink 0.5s infinite;
-                    }
-
-                    @keyframes blink {
-                        0% {opacity: 1;}
-                        50% {opacity: 0;}
-                        100% {opacity: 1;}
-                    }
-
-                    </style>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-                # TEXTO GIGANTE
-                st.markdown(
-                    """
-                    <div class="big-alert">
-                    🚨 ACCESO DENEGADO 🚨
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-                st.error("🚨 INTRUSO DETECTADO 🚨")
-
-                st.warning("📡 Enviando alerta de seguridad...")
+    # ALARMA EXTREMA
+    if st.session_state.attempts >= MAX_ATTEMPTS:
+        mostrar_alarma()
 
 
-                # -------------------------
-                # SONIDO AUTOMÁTICO
-                # -------------------------
+# Si no está autenticado, se muestra solo el login y se corta aquí
+if not st.session_state.authenticated:
+    pantalla_login()
+    st.stop()
 
-                with open("alarm.mp3", "rb") as f:
-                    audio_bytes = f.read()
 
-                audio_base64 = base64.b64encode(
-                    audio_bytes
-                ).decode()
+# =====================================================================
+#                 PARTE 2: CUENTOS DE MACONDO (acceso concedido)
+# =====================================================================
 
-                audio_html = f"""
-                <audio autoplay>
-                    <source src="data:audio/mp3;base64,{audio_base64}" type="audio/mp3">
-                </audio>
-                """
+# =========================
+# ESTILOS
+# =========================
+st.markdown("""
+<style>
 
-                st.markdown(
-                    audio_html,
-                    unsafe_allow_html=True
-                )
+@import url('https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,700;1,500&family=EB+Garamond:ital,wght@0,400;0,500;1,400&display=swap');
 
-# -------------------------
-# SECRET PAGE
-# -------------------------
+/* ---------- Fondo tipo papel antiguo ---------- */
+.stApp {
+    background:
+        radial-gradient(ellipse at top, #fbf3dc 0%, #f1e4c3 60%, #e6d4a8 100%);
+    color: #3b2a1a;
+    font-family: 'EB Garamond', Georgia, serif;
+}
 
-else:
+[data-testid="stHeader"] {
+    background: transparent;
+}
 
- # =========================
-    # LIBRERÍAS
-    # =========================
+.block-container {
+    padding-top: 2.5rem;
+    max-width: 780px;
+}
 
-    import base64
-    import numpy as np
-    from PIL import Image
-    from openai import OpenAI
-    from streamlit_drawable_canvas import st_canvas
-    import random
+/* ---------- Texto general ---------- */
+.stApp p, .stApp li, .stApp label {
+    font-family: 'EB Garamond', Georgia, serif;
+    font-size: 1.15rem;
+    color: #3b2a1a;
+}
 
-    # =========================
-    # SESSION STATE
-    # =========================
+/* ---------- Títulos ---------- */
+.kicker {
+    text-align: center;
+    font-family: 'EB Garamond', Georgia, serif;
+    font-variant: small-caps;
+    letter-spacing: 4px;
+    font-size: 1.05rem;
+    color: #8b6b3d;
+    margin-bottom: -10px;
+}
 
-    if "historia" not in st.session_state:
-        st.session_state.historia = ""
+.stApp h1, [data-testid="stHeading"] h1 {
+    font-family: 'Playfair Display', Georgia, serif !important;
+    text-align: center;
+    color: #3b2a1a !important;
+    font-size: 3.6rem !important;
+    font-weight: 700 !important;
+    letter-spacing: 2px;
+    line-height: 1.15 !important;
+    padding: 0.4rem 0 0.2rem 0 !important;
+}
 
-    if "descripcion_personaje" not in st.session_state:
-        st.session_state.descripcion_personaje = ""
+.stApp h1::after, [data-testid="stHeading"] h1::after {
+    content: "";
+    display: block;
+    width: 180px;
+    height: 2px;
+    margin: 16px auto 4px auto;
+    background: linear-gradient(to right, transparent, #a47a2c, transparent);
+}
 
-    # =========================
-    # ESTILOS
-    # =========================
+h2, h3 {
+    font-family: 'Playfair Display', Georgia, serif !important;
+    color: #5a3a1c !important;
+    font-weight: 500 !important;
+}
 
-    st.markdown("""
-    <style>
+[data-testid="stHeading"] h3,
+.stApp h3 {
+    font-style: italic;
+}
 
-    .main {
-        background: linear-gradient(to bottom, #fff7d6, #ffe8f3);
-    }
+/* Subtítulo centrado y en cursiva */
+.stApp h3:first-of-type {
+    text-align: center;
+    font-size: 1.35rem !important;
+    font-weight: 400 !important;
+    color: #6b4a22 !important;
+}
 
-    h1 {
-        text-align: center;
-        color: #ff4b91;
-        font-size: 3.2rem;
-    }
+/* ---------- Barra lateral ---------- */
+[data-testid="stSidebar"] {
+    background: linear-gradient(to bottom, #e9d8ad, #dcc791);
+    border-right: 2px solid #b79a5b;
+}
 
-    h2, h3 {
-        color: #6a4c93;
-    }
+[data-testid="stSidebar"] h2 {
+    font-family: 'Playfair Display', Georgia, serif !important;
+    color: #4a2e14 !important;
+    border-bottom: 1px solid #a47a2c;
+    padding-bottom: 0.4rem;
+}
 
-    .stButton>button {
-        background-color: #ff4b91;
-        color: white;
-        border-radius: 15px;
-        border: none;
-        padding: 12px 22px;
-        font-size: 18px;
-        transition: 0.3s;
-        font-weight: bold;
-    }
+[data-testid="stSidebar"] label p {
+    font-weight: 500;
+    font-size: 1.05rem !important;
+    color: #4a2e14 !important;
+}
 
-    .stButton>button:hover {
-        background-color: #ff85b3;
-        transform: scale(1.05);
-    }
+[data-testid="stSidebar"] input[type="color"] {
+    border-radius: 50%;
+    border: 2px solid #a47a2c;
+}
 
-    .story-box {
-        background-color: white;
-        padding: 25px;
-        border-radius: 25px;
-        box-shadow: 0px 4px 15px rgba(0,0,0,0.1);
-        margin-top: 20px;
-        font-size: 18px;
-        color: #2d2d2d;
-    }
+/* ---------- Iconos (restaurar fuente) ---------- */
+[data-testid="stIconMaterial"],
+.material-icons,
+[class*="material-symbols"] {
+    font-family: "Material Symbols Rounded", "Material Icons" !important;
+}
 
-    .tip-box {
-        background-color: #fff0f7;
-        padding: 15px;
-        border-radius: 15px;
-        margin-bottom: 20px;
-        color: #6a4c93;
-        font-weight: bold;
-    }
+/* ---------- Flecha para abrir / cerrar la barra lateral ---------- */
+[data-testid="stSidebarCollapseButton"] button,
+[data-testid="stExpandSidebarButton"],
+[data-testid="stExpandSidebarButton"] button,
+[data-testid="collapsedControl"] button {
+    background: #fbf3dc !important;
+    color: #5a3a1c !important;
+    border: 1px solid #a47a2c !important;
+    border-radius: 50% !important;
+    width: 38px;
+    height: 38px;
+    box-shadow: 0px 3px 8px rgba(60, 30, 10, 0.25);
+    transition: 0.25s;
+}
 
-    .footer {
-        text-align: center;
-        margin-top: 40px;
-        color: gray;
-    }
+[data-testid="stSidebarCollapseButton"] button:hover,
+[data-testid="stExpandSidebarButton"]:hover,
+[data-testid="stExpandSidebarButton"] button:hover,
+[data-testid="collapsedControl"] button:hover {
+    background: #7a2e2e !important;
+    color: #fbf3dc !important;
+    border-color: #3b1212 !important;
+    transform: scale(1.1);
+}
 
-    </style>
-    """, unsafe_allow_html=True)
+[data-testid="stSidebarCollapseButton"] button *,
+[data-testid="stExpandSidebarButton"] *,
+[data-testid="collapsedControl"] button * {
+    color: inherit !important;
+}
 
-    # =========================
-    # FUNCIÓN BASE64
-    # =========================
+/* ---------- Campos de texto y selectores ---------- */
+[data-baseweb="select"] > div,
+[data-baseweb="input"] > div {
+    background-color: #fbf3dc !important;
+    border: 1px solid #b79a5b !important;
+    border-radius: 6px !important;
+}
 
-    def encode_image(image_path):
-        with open(image_path, "rb") as image_file:
-            return base64.b64encode(
-                image_file.read()
-            ).decode("utf-8")
+/* ---------- Botón ---------- */
+.stButton>button, .stDownloadButton>button {
+    background: linear-gradient(to bottom, #7a2e2e, #5c1f1f);
+    color: #fbf3dc;
+    border-radius: 6px;
+    border: 1px solid #3b1212;
+    padding: 12px 28px;
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 18px;
+    letter-spacing: 1px;
+    transition: 0.3s;
+    box-shadow: 0px 3px 8px rgba(60, 30, 10, 0.35);
+}
 
-    # =========================
-    # TÍTULO
-    # =========================
+.stButton>button p, .stDownloadButton>button p {
+    color: #fbf3dc !important;
+}
 
-    st.title("📖✨ Fábulas Mágicas para Niños")
+.stButton>button:hover, .stDownloadButton>button:hover {
+    background: linear-gradient(to bottom, #944040, #6e2626);
+    border-color: #3b1212;
+    transform: translateY(-2px);
+}
 
-    st.subheader(
-        "Dibuja un personaje y crea una historia increíble 🌈"
+/* ---------- Cita / epígrafe ---------- */
+.tip-box {
+    text-align: center;
+    font-family: 'Playfair Display', Georgia, serif;
+    font-style: italic;
+    font-size: 1.15rem;
+    color: #6b4a22;
+    padding: 14px 20px;
+    margin: 10px 0 25px 0;
+    border-top: 1px solid #b79a5b;
+    border-bottom: 1px solid #b79a5b;
+}
+
+/* ---------- Marco del lienzo de dibujo ---------- */
+iframe {
+    border: 3px double #8b6b3d !important;
+    border-radius: 4px;
+    box-shadow: 0px 6px 18px rgba(60, 30, 10, 0.25);
+}
+
+/* ---------- Página del cuento ---------- */
+.story-box {
+    position: relative;
+    background:
+        linear-gradient(to right, rgba(120,90,40,0.12), transparent 6%),
+        #fdf8e8;
+    padding: 50px 60px 45px 60px;
+    margin: 30px 0;
+    border: 1px solid #c9b27a;
+    border-radius: 3px;
+    box-shadow:
+        0px 12px 30px rgba(60, 30, 10, 0.30),
+        inset 0 0 40px rgba(180, 140, 70, 0.18);
+    font-family: 'EB Garamond', Georgia, serif;
+    font-size: 1.28rem;
+    line-height: 1.85;
+    color: #2e2014;
+}
+
+.story-box .story-title {
+    font-family: 'Playfair Display', Georgia, serif;
+    text-align: center;
+    font-size: 2rem;
+    font-weight: 700;
+    color: #3b2a1a;
+    margin: 0 0 6px 0;
+    line-height: 1.25;
+}
+
+.story-box .ornament {
+    width: 160px;
+    height: 2px;
+    margin: 4px auto 28px auto;
+    background: linear-gradient(to right, transparent, #a47a2c, transparent);
+}
+
+.story-box p {
+    text-align: justify;
+    text-indent: 1.6em;
+    margin: 0 0 6px 0;
+    font-size: 1.28rem;
+    color: #2e2014;
+}
+
+.story-box p:first-of-type {
+    text-indent: 0;
+}
+
+.story-box p:first-of-type::first-letter {
+    font-family: 'Playfair Display', Georgia, serif;
+    float: left;
+    font-size: 4.2rem;
+    line-height: 0.85;
+    padding: 6px 10px 0 0;
+    color: #7a2e2e;
+    font-weight: 700;
+}
+
+.story-box .end-mark {
+    text-align: center;
+    color: #a47a2c;
+    font-family: 'Playfair Display', Georgia, serif;
+    font-size: 1.6rem;
+    letter-spacing: 8px;
+    margin-top: 25px;
+}
+
+/* ---------- Footer ---------- */
+.footer {
+    text-align: center;
+    margin-top: 50px;
+    padding-top: 15px;
+    border-top: 1px solid #b79a5b;
+    font-family: 'Playfair Display', Georgia, serif;
+    font-style: italic;
+    color: #7a6038;
+}
+
+@media (max-width: 640px) {
+    .story-box { padding: 30px 24px; }
+    h1 { font-size: 2.2rem !important; }
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# =========================
+# FUNCIÓN BASE64
+# =========================
+def encode_image(image_path):
+    with open(image_path, "rb") as image_file:
+        return base64.b64encode(image_file.read()).decode("utf-8")
+
+# =========================
+# FUNCIÓN PDF (libro de una página)
+# =========================
+def limpiar_texto(texto):
+    # Las fuentes estándar del PDF no incluyen emojis ni símbolos raros
+    return texto.encode("cp1252", "ignore").decode("cp1252")
+
+
+def crear_pdf(titulo, parrafos, dibujo_png):
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, HRFlowable, Image as RLImage
     )
 
-    # =========================
-    # SIDEBAR
-    # =========================
+    buffer = io.BytesIO()
+    dorado = colors.HexColor("#a47a2c")
 
-    with st.sidebar:
-
-        st.header("🪄 Personaliza la historia")
-
-        moraleja = st.selectbox(
-            "💡 Elige una moraleja",
-            [
-                "La amistad es importante",
-                "Nunca rendirse",
-                "Ser amable con los demás",
-                "Decir siempre la verdad",
-                "Trabajar en equipo",
-                "Compartir con otros"
-            ]
+    def fondo_pagina(canvas, doc):
+        ancho, alto = A4
+        canvas.saveState()
+        canvas.setFillColor(colors.HexColor("#fdf8e8"))
+        canvas.rect(0, 0, ancho, alto, stroke=0, fill=1)
+        canvas.setStrokeColor(dorado)
+        canvas.setLineWidth(1.6)
+        canvas.rect(1.2 * cm, 1.2 * cm, ancho - 2.4 * cm, alto - 2.4 * cm)
+        canvas.setLineWidth(0.5)
+        canvas.rect(1.45 * cm, 1.45 * cm, ancho - 2.9 * cm, alto - 2.9 * cm)
+        canvas.setFont("Times-Italic", 9)
+        canvas.setFillColor(colors.HexColor("#7a6038"))
+        canvas.drawCentredString(
+            ancho / 2, 0.7 * cm,
+            "Cuentos de Macondo - Hecho por Valentina Marin y Samuel Acevedo"
         )
+        canvas.restoreState()
 
-        lugar = st.selectbox(
-            "🌍 Lugar de la aventura",
-            [
-                "Bosque mágico",
-                "Castillo encantado",
-                "Espacio",
-                "Selva misteriosa",
-                "Océano brillante",
-                "Pueblo fantástico"
-            ]
-        )
-
-        stroke_width = st.slider(
-            "🖍️ Grosor del pincel",
-            1,
-            25,
-            5
-        )
-
-    # =========================
-    # API KEY DESDE LA PÁGINA
-    # =========================
-
-    api_key = st.text_input(
-        "🔑 Ingresa tu API Key de OpenAI",
-        type="password",
-        placeholder="sk-..."
+    estilo_titulo = ParagraphStyle(
+        "titulo", fontName="Times-Bold", fontSize=24, leading=29,
+        alignment=TA_CENTER, textColor=colors.HexColor("#3b2a1a"), spaceAfter=4
     )
+    estilo_cuerpo = ParagraphStyle(
+        "cuerpo", fontName="Times-Roman", fontSize=12.5, leading=19,
+        alignment=TA_JUSTIFY, firstLineIndent=18, spaceAfter=4,
+        textColor=colors.HexColor("#2e2014")
+    )
+    estilo_primero = ParagraphStyle("primero", parent=estilo_cuerpo, firstLineIndent=0)
+    estilo_fin = ParagraphStyle(
+        "fin", fontName="Times-Bold", fontSize=16, alignment=TA_CENTER,
+        textColor=dorado, spaceBefore=12
+    )
+
+    doc = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=2.6 * cm, rightMargin=2.6 * cm,
+        topMargin=2.4 * cm, bottomMargin=2.2 * cm,
+        title=limpiar_texto(titulo), author="Cuentos de Macondo"
+    )
+
+    contenido = [Paragraph(escape(limpiar_texto(titulo)), estilo_titulo)]
+    contenido.append(HRFlowable(
+        width="30%", thickness=1.2, color=dorado,
+        spaceBefore=6, spaceAfter=10, hAlign="CENTER"
+    ))
+
+    if dibujo_png:
+        ancho_img = 6 * cm
+        contenido.append(RLImage(
+            io.BytesIO(dibujo_png), width=ancho_img, height=ancho_img * 350 / 500,
+            hAlign="CENTER"
+        ))
+        contenido.append(Spacer(1, 12))
+
+    for i, p in enumerate(parrafos):
+        texto = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", escape(limpiar_texto(p)))
+        contenido.append(Paragraph(texto, estilo_primero if i == 0 else estilo_cuerpo))
+
+    contenido.append(Paragraph("* * *", estilo_fin))
+
+    doc.build(contenido, onFirstPage=fondo_pagina, onLaterPages=fondo_pagina)
+    return buffer.getvalue()
+
+
+# =========================
+# TÍTULO
+# =========================
+st.markdown('<div class="kicker">Homenaje a Gabriel García Márquez</div>', unsafe_allow_html=True)
+st.title("Cuentos de Macondo")
+st.subheader("Dibuja un personaje y deja que la historia nazca de tu trazo")
+
+# =========================
+# SIDEBAR
+# =========================
+with st.sidebar:
+
+    st.header("✒️ Personaliza tu cuento")
+
+    genero = st.selectbox(
+        "🎭 Elige el género del cuento",
+        [
+            "Realismo mágico",
+            "Romance",
+            "Misterio",
+            "Nostalgia y recuerdos",
+            "Aventura",
+            "Drama familiar",
+            "Fantasía"
+        ]
+    )
+
+    personaje_gabo = st.selectbox(
+        "👤 Personajes de Gabo",
+        [
+            "Ninguno",
+            "Remedios la Bella (Cien años de soledad)",
+            "Úrsula Iguarán (Cien años de soledad)",
+            "Coronel Aureliano Buendía (Cien años de soledad)",
+            "Melquíades (Cien años de soledad)",
+            "Pilar Ternera (Cien años de soledad)",
+            "Florentino Ariza (El amor en los tiempos del cólera)",
+            "Fermina Daza (El amor en los tiempos del cólera)",
+            "Santiago Nasar (Crónica de una muerte anunciada)",
+            "Eréndira y su abuela (La increíble y triste historia de la cándida Eréndira)",
+            "El coronel (El coronel no tiene quien le escriba)",
+            "El hombre muy viejo con unas alas enormes (Un señor muy viejo con unas alas enormes)"
+        ]
+    )
+
+    stroke_color = st.color_picker(
+        "🎨 Color del pincel",
+        "#000000"
+    )
+
+    stroke_width = st.slider(
+        "🖍️ Grosor del pincel",
+        1,
+        25,
+        5
+    )
+
+# =========================
+# API KEY
+# =========================
+api_key = st.text_input(
+    "🔑 Ingresa tu API Key de OpenAI",
+    type="password"
+)
+
+# =========================
+# FRASES ALEATORIAS
+# =========================
+frases = [
+    "🌟 Tu imaginación puede crear mundos mágicos",
+    "🦋 Cada dibujo guarda un cuento esperando ser contado",
+    "📚 Los mejores personajes nacen aquí",
+    "☔ Quizás hoy llueva durante cuatro años en tu historia"
+]
+
+st.markdown(
+    f"""
+    <div class="tip-box">
+    {random.choice(frases)}
+    </div>
+    """,
+    unsafe_allow_html=True
+)
+
+# =========================
+# CANVAS DE DIBUJO
+# =========================
+st.markdown("## ✎ Dibuja tu personaje")
+
+canvas_result = st_canvas(
+    fill_color="rgba(255, 165, 0, 0.3)",
+    stroke_width=stroke_width,
+    stroke_color=stroke_color,
+    background_color="#FFFFFF",
+    height=350,
+    width=500,
+    drawing_mode="freedraw",
+    key="canvas",
+)
+
+# =========================
+# BOTÓN CREAR HISTORIA
+# =========================
+if st.button("✨ Crear Cuento"):
 
     if not api_key:
-        st.warning("⚠️ Ingresa tu API Key para continuar.")
-        st.stop()
+        st.warning("⚠️ Por favor ingresa tu API Key.")
 
-    # =========================
-    # FRASES ALEATORIAS
-    # =========================
+    elif canvas_result.image_data is None:
+        st.warning("⚠️ Dibuja un personaje primero.")
 
-    frases = [
-        "🌟 Tu imaginación puede crear mundos mágicos",
-        "🦄 Cada dibujo tiene una historia escondida",
-        "📚 Los mejores personajes nacen aquí",
-        "✨ Hoy puedes inventar algo increíble"
-    ]
+    else:
+
+        client = OpenAI(api_key=api_key)
+
+        with st.spinner("🎨 Analizando dibujo..."):
+
+            # Convertir dibujo
+            img_array = np.array(canvas_result.image_data)
+
+            image = Image.fromarray(
+                img_array.astype("uint8")
+            ).convert("RGBA")
+
+            image.save("personaje.png")
+
+            base64_image = encode_image("personaje.png")
+
+            # =========================
+            # ANALIZAR DIBUJO
+            # =========================
+            descripcion_prompt = """
+            Analiza este dibujo.
+
+            Describe:
+            - Qué personaje, objeto o figura parece ser
+            - Cómo se ve
+            - Qué emociones transmite
+
+            Responde en español de forma corta y amigable.
+            """
+
+            descripcion_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "text",
+                                "text": descripcion_prompt
+                            },
+                            {
+                                "type": "image_url",
+                                "image_url": {
+                                    "url": f"data:image/png;base64,{base64_image}"
+                                }
+                            }
+                        ]
+                    }
+                ],
+                max_tokens=200,
+            )
+
+            descripcion = descripcion_response.choices[0].message.content
+
+            st.session_state.descripcion_personaje = descripcion
+
+            st.success("🎉 ¡Personaje descubierto!")
+
+            st.markdown("### Tu personaje")
+            st.write(descripcion)
+
+        # =========================
+        # CREAR HISTORIA
+        # =========================
+        with st.spinner("📖 Escribiendo tu cuento..."):
+
+            estilo_gabo = """
+            Eres un escritor que domina el estilo literario de Gabriel García Márquez
+            y del realismo mágico latinoamericano. Tu escritura tiene estas características:
+            - Lo extraordinario se cuenta con total naturalidad, como si fuera cotidiano.
+            - Narrador omnisciente, sereno, casi de abuelo que cuenta una historia antigua.
+            - Frases largas, musicales y llenas de imágenes sensoriales
+              (olores, calor, lluvia, colores, flores, mariposas).
+            - Juegos con el tiempo: saltos al pasado y al futuro, y la sensación de que
+              el tiempo es circular.
+            - Temas de soledad, memoria, nostalgia, amor y destino.
+            - Un pueblo caribeño o colombiano como escenario, con aire de leyenda.
+            - Detalles exagerados y poéticos (hipérboles) presentados como hechos reales.
+            - Un final que cierre con una imagen poética o un giro inesperado.
+            Escribes siempre en español. No copias textos ni frases de sus obras:
+            creas una historia totalmente original inspirada en su estilo.
+            """
+
+            if personaje_gabo == "Ninguno":
+                instruccion_personaje = ""
+            else:
+                instruccion_personaje = (
+                    f"- Hacer que lo dibujado y el personaje {personaje_gabo} "
+                    "sean protagonistas juntos: se encuentran e interactúan en una "
+                    "situación nueva y original, respetando la personalidad y la "
+                    "esencia del personaje, sin copiar escenas ni frases de la obra"
+                )
+
+            historia_prompt = f"""
+            Basado en esta descripción de un dibujo:
+
+            {descripcion}
+
+            Escribe un cuento corto de UNA sola página (entre 300 y 400 palabras).
+
+            El cuento debe:
+            - Tener como protagonista o elemento central lo que aparece en el dibujo
+            {instruccion_personaje}
+            - Ser del género: {genero}
+            - Tener un título original en la primera línea
+            - Tener la esencia y el estilo de Gabriel García Márquez
+            - Incluir al menos un elemento mágico contado como algo normal
+            - Tener un final memorable
+            """
+
+            historia_response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {
+                        "role": "system",
+                        "content": estilo_gabo
+                    },
+                    {
+                        "role": "user",
+                        "content": historia_prompt
+                    }
+                ],
+                max_tokens=900,
+                temperature=0.9,
+            )
+
+            historia = historia_response.choices[0].message.content
+
+            st.session_state.historia = historia
+
+            # Separar título y párrafos para darle forma de página de libro
+            lineas = [l.strip() for l in historia.strip().split("\n") if l.strip()]
+            titulo = re.sub(r"^(#+\s*|\*+|T[íi]tulo:\s*)", "", lineas[0])
+            titulo = re.sub(r"\*+", "", titulo).strip()
+            titulo = re.sub(r"^T[íi]tulo:\s*", "", titulo).strip(' "«»')
+            parrafos = [
+                re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", p)
+                for p in lineas[1:]
+            ]
+            cuerpo_html = "".join(f"<p>{p}</p>" for p in parrafos)
+            historia_html = (
+                f'<div class="story-title">{titulo}</div>'
+                f'<div class="ornament"></div>'
+                f'{cuerpo_html}'
+                f'<div class="end-mark">* * *</div>'
+            )
+
+            # Guardar el cuento para que no desaparezca al descargar el PDF
+            st.session_state.historia_html = historia_html
+
+            # Crear el PDF (dibujo sobre fondo blanco + cuento)
+            try:
+                fondo_blanco = Image.new("RGB", image.size, (255, 255, 255))
+                fondo_blanco.paste(image, mask=image.split()[3])
+                dibujo_buffer = io.BytesIO()
+                fondo_blanco.save(dibujo_buffer, format="PNG")
+
+                st.session_state.pdf_bytes = crear_pdf(
+                    titulo, lineas[1:], dibujo_buffer.getvalue()
+                )
+                nombre = re.sub(r"[^\w\-]+", "_", titulo).strip("_")[:40] or "cuento"
+                st.session_state.pdf_nombre = f"{nombre}.pdf"
+                st.session_state.pdf_error = ""
+            except Exception as e:
+                st.session_state.pdf_bytes = None
+                st.session_state.pdf_error = str(e)
+
+# =========================
+# MOSTRAR CUENTO + DESCARGA PDF
+# =========================
+if st.session_state.historia_html:
+
+    st.markdown("## Tu cuento")
 
     st.markdown(
         f"""
-        <div class="tip-box">
-        {random.choice(frases)}
-        </div>
-        """,
+<div class="story-box">{st.session_state.historia_html}</div>
+""",
         unsafe_allow_html=True
     )
 
-    # =========================
-    # CANVAS DE DIBUJO
-    # =========================
+    if st.session_state.pdf_bytes:
+        st.download_button(
+            label="📥 Descargar cuento en PDF",
+            data=st.session_state.pdf_bytes,
+            file_name=st.session_state.pdf_nombre,
+            mime="application/pdf"
+        )
+    elif st.session_state.pdf_error:
+        st.warning(
+            "No se pudo crear el PDF. Revisa que 'reportlab' esté en requirements.txt. "
+            f"Detalle: {st.session_state.pdf_error}"
+        )
 
-    st.markdown("## 🎨 Dibuja tu personaje")
-
-    canvas_result = st_canvas(
-        fill_color="rgba(255, 165, 0, 0.3)",
-        stroke_width=stroke_width,
-        stroke_color="#000000",
-        background_color="#FFFFFF",
-        height=350,
-        width=500,
-        drawing_mode="freedraw",
-        key="canvas",
-    )
-
-    # =========================
-    # BOTÓN CREAR HISTORIA
-    # =========================
-
-    if st.button("✨ Crear Fábula"):
-
-        if canvas_result.image_data is None:
-
-            st.warning(
-                "⚠️ Dibuja un personaje primero."
-            )
-
-        else:
-
-            client = OpenAI(api_key=api_key)
-
-            with st.spinner(
-                "🎨 Analizando dibujo..."
-            ):
-
-                img_array = np.array(
-                    canvas_result.image_data
-                )
-
-                image = Image.fromarray(
-                    img_array.astype("uint8")
-                ).convert("RGBA")
-
-                image.save("personaje.png")
-
-                base64_image = encode_image(
-                    "personaje.png"
-                )
-
-                # =========================
-                # ANALIZAR DIBUJO
-                # =========================
-
-                descripcion_prompt = """
-                Analiza este dibujo infantil.
-
-                Describe:
-                - Qué personaje parece ser
-                - Cómo se ve
-                - Qué emociones transmite
-
-                Responde en español
-                de forma corta y amigable.
-                """
-
-                descripcion_response = (
-                    client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": [
-                                    {
-                                        "type": "text",
-                                        "text": descripcion_prompt
-                                    },
-                                    {
-                                        "type": "image_url",
-                                        "image_url": {
-                                            "url":
-                                            f"data:image/png;base64,{base64_image}"
-                                        }
-                                    }
-                                ]
-                            }
-                        ],
-                        max_tokens=200,
-                    )
-                )
-
-                descripcion = (
-                    descripcion_response
-                    .choices[0]
-                    .message
-                    .content
-                )
-
-                st.session_state.descripcion_personaje = descripcion
-
-                st.success(
-                    "🎉 ¡Personaje descubierto!"
-                )
-
-                st.markdown(
-                    "### 🧸 Tu personaje"
-                )
-
-                st.write(descripcion)
-
-            # =========================
-            # CREAR HISTORIA
-            # =========================
-
-            with st.spinner(
-                "📖 Creando fábula mágica..."
-            ):
-
-                historia_prompt = f"""
-                Basado en esta descripción:
-
-                {descripcion}
-
-                Crea una fábula infantil
-                corta y divertida.
-
-                La historia debe:
-                - Ocurrir en: {lugar}
-                - Tener diálogos simples
-                - Ser muy imaginativa
-                - Tener un final feliz
-                - Enseñar esta moraleja:
-                '{moraleja}'
-
-                Usa lenguaje fácil para niños.
-                """
-
-                historia_response = (
-                    client.chat.completions.create(
-                        model="gpt-4o-mini",
-                        messages=[
-                            {
-                                "role": "user",
-                                "content": historia_prompt
-                            }
-                        ],
-                        max_tokens=700,
-                    )
-                )
-
-                historia = (
-                    historia_response
-                    .choices[0]
-                    .message
-                    .content
-                )
-
-                st.session_state.historia = historia
-
-                st.markdown(
-                    "## 🌟 Tu Fábula Mágica"
-                )
-
-                st.markdown(
-                    f"""
-                    <div class="story-box">
-                    {historia}
-                    </div>
-                    """,
-                    unsafe_allow_html=True
-                )
-
-                st.balloons()
-
-    # =========================
-    # FOOTER
-    # =========================
-
-    st.markdown("""
-    <div class="footer">
-    ✨ Hecho por Valentina Marin y Samuel Acevedo ✨
-    </div>
-    """, unsafe_allow_html=True)
+# =========================
+# FOOTER
+# =========================
+st.markdown("""
+<div class="footer">
+✨ Hecho por Valentina Marin y Samuel Acevedo✨
+</div>
+""", unsafe_allow_html=True)
